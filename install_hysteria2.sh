@@ -57,15 +57,15 @@ install_dependencies() {
     if command -v apt &> /dev/null; then
         export DEBIAN_FRONTEND=noninteractive
         apt update -y
-        apt install -y curl wget qrencode socat cron iptables iptables-persistent
+        apt install -y curl wget qrencode socat cron dnsutils
     elif command -v apt-get &> /dev/null; then
         export DEBIAN_FRONTEND=noninteractive
         apt-get update -y
-        apt-get install -y curl wget qrencode socat cron iptables iptables-persistent
+        apt-get install -y curl wget qrencode socat cron dnsutils
     elif command -v yum &> /dev/null; then
-        yum install -y curl wget qrencode socat cronie
+        yum install -y curl wget qrencode socat cronie bind-utils
     elif command -v dnf &> /dev/null; then
-        dnf install -y curl wget qrencode socat cronie
+        dnf install -y curl wget qrencode socat cronie bind-utils
     else
         print_error "不支持的系统类型"
         exit 1
