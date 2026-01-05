@@ -95,6 +95,29 @@ main() {
         exit 1
     fi
     
+    # 询问是否启用端口跳跃
+    echo ""
+    read -p "是否启用端口跳跃? (Y/n): " ENABLE_PORT_HOPPING
+    ENABLE_PORT_HOPPING=${ENABLE_PORT_HOPPING:-Y}
+    
+    if [[ "$ENABLE_PORT_HOPPING" =~ ^[Yy]$ ]]; then
+        USE_PORT_HOPPING=true
+        echo ""
+        read -p "请输入端口跳跃范围 (格式: 起始端口-结束端口，默认: 20000-30000): " PORT_RANGE
+        PORT_RANGE=${PORT_RANGE:-20000-30000}
+        
+        # 验证端口范围格式
+        if [[ ! "$PORT_RANGE" =~ ^[0-9]+-[0-9]+$ ]]; then
+            print_error "端口范围格式不正确"
+            exit 1
+        fi
+        
+        print_info "端口跳跃范围: $PORT_RANGE"
+    else
+        USE_PORT_HOPPING=false
+        print_info "已禁用端口跳跃"
+    fi
+    
     print_info "域名: $DOMAIN"
     print_info "邮箱: $EMAIL"
     echo ""
@@ -106,9 +129,21 @@ main() {
     PASSWORD=$(generate_password)
     print_info "生成随机密码: $PASSWORD"
     
-    # 生成随机端口
-    PORT=$(generate_port)
-    print_info "生成随机端口: $PORT"
+    # 端口输入或随机生成
+    echo ""
+    read -p "请输入监听端口 (留空使用随机端口 30000-40000): " USER_PORT
+    if [ -z "$USER_PORT" ]; then
+        PORT=$(generate_port)
+        print_info "生成随机端口: $PORT"
+    else
+        # 验证端口号
+        if ! [[ "$USER_PORT" =~ ^[0-9]+$ ]] || [ "$USER_PORT" -lt 1 ] || [ "$USER_PORT" -gt 65535 ]; then
+            print_error "端口号无效，必须在 1-65535 之间"
+            exit 1
+        fi
+        PORT=$USER_PORT
+        print_info "使用指定端口: $PORT"
+    fi
     
     # 安装 Hysteria2
     print_info "开始安装 Hysteria2..."
@@ -197,46 +232,70 @@ EOF
     chmod 644 /etc/hysteria/cert.crt
     chmod 600 /etc/hysteria/private.key
     
-    # 配置防火墙（如果使用 UFW）
-    if command -v ufw &> /dev/null && ufw status | grep -q "Status: active"; then
+    # 配置防火墙
+    print_info "配置防火墙规则..."
+    
+    if command -v ufw &> /dev/null; then
+        # UFW 防火墙配置
         print_info "检测到 UFW 防火墙，配置端口规则..."
-        ufw allow $PORT/tcp comment 'Hysteria2'
-        ufw allow $PORT/udp comment 'Hysteria2'
-        print_info "UFW 防火墙规则已添加"
-    fi
-    
-    # 获取主网卡名称
-    MAIN_INTERFACE=$(ip route | grep default | awk '{print $5}' | head -n 1)
-    if [ -z "$MAIN_INTERFACE" ]; then
-        MAIN_INTERFACE="eth0"
-        print_warning "无法检测主网卡，使用默认值: eth0"
-    else
-        print_info "检测到主网卡: $MAIN_INTERFACE"
-    fi
-    
-    # 配置 iptables 端口转发
-    print_info "配置 iptables 端口转发规则..."
-    
-    # IPv4 转发规则
-    iptables -t nat -A PREROUTING -i $MAIN_INTERFACE -p udp --dport 20000:30000 -j REDIRECT --to-ports $PORT
-    
-    # IPv6 转发规则（如果支持）
-    if command -v ip6tables &> /dev/null; then
-        ip6tables -t nat -A PREROUTING -i $MAIN_INTERFACE -p udp --dport 20000:30000 -j REDIRECT --to-ports $PORT 2>/dev/null || true
-    fi
-    
-    print_info "iptables 转发规则已添加"
-    
-    # 保存 iptables 规则
-    if command -v netfilter-persistent &> /dev/null; then
-        netfilter-persistent save
-        print_info "iptables 规则已保存（使用 netfilter-persistent）"
-    elif command -v iptables-save &> /dev/null; then
-        iptables-save > /etc/iptables/rules.v4 2>/dev/null || iptables-save > /etc/iptables.rules 2>/dev/null || true
-        if command -v ip6tables-save &> /dev/null; then
-            ip6tables-save > /etc/iptables/rules.v6 2>/dev/null || ip6tables-save > /etc/ip6tables.rules 2>/dev/null || true
+        ufw allow $PORT/tcp comment 'Hysteria2' 2>/dev/null || true
+        ufw allow $PORT/udp comment 'Hysteria2' 2>/dev/null || true
+        print_info "UFW 防火墙规则已添加 (TCP/UDP $PORT)"
+        
+        # 如果启用端口跳跃，添加跳跃端口范围
+        if [ "$USE_PORT_HOPPING" = true ]; then
+            START_PORT=$(echo $PORT_RANGE | cut -d'-' -f1)
+            END_PORT=$(echo $PORT_RANGE | cut -d'-' -f2)
+            # UFW 不支持端口范围，但我们通过 iptables 转发，所以不需要在 UFW 中开放
+            print_info "端口跳跃将通过 iptables 转发到端口 $PORT"
         fi
-        print_info "iptables 规则已保存"
+    elif command -v firewall-cmd &> /dev/null; then
+        # firewalld 防火墙配置
+        print_info "检测到 firewalld 防火墙，配置端口规则..."
+        firewall-cmd --permanent --add-port=$PORT/tcp 2>/dev/null || true
+        firewall-cmd --permanent --add-port=$PORT/udp 2>/dev/null || true
+        firewall-cmd --reload 2>/dev/null || true
+        print_info "firewalld 防火墙规则已添加 (TCP/UDP $PORT)"
+    else
+        print_warning "未检测到防火墙，请手动开放端口 $PORT (TCP/UDP)"
+    fi
+    
+    # 配置 iptables 端口跳跃转发（仅在启用时）
+    if [ "$USE_PORT_HOPPING" = true ]; then
+        # 获取主网卡名称
+        MAIN_INTERFACE=$(ip route | grep default | awk '{print $5}' | head -n 1)
+        if [ -z "$MAIN_INTERFACE" ]; then
+            MAIN_INTERFACE="eth0"
+            print_warning "无法检测主网卡，使用默认值: eth0"
+        else
+            print_info "检测到主网卡: $MAIN_INTERFACE"
+        fi
+        
+        print_info "配置 iptables 端口跳跃转发规则..."
+        
+        # IPv4 转发规则
+        iptables -t nat -A PREROUTING -i $MAIN_INTERFACE -p udp --dport $PORT_RANGE -j REDIRECT --to-ports $PORT
+        
+        # IPv6 转发规则（如果支持）
+        if command -v ip6tables &> /dev/null; then
+            ip6tables -t nat -A PREROUTING -i $MAIN_INTERFACE -p udp --dport $PORT_RANGE -j REDIRECT --to-ports $PORT 2>/dev/null || true
+        fi
+        
+        print_info "iptables 端口跳跃转发规则已添加 ($PORT_RANGE -> $PORT)"
+        
+        # 保存 iptables 规则
+        if command -v netfilter-persistent &> /dev/null; then
+            netfilter-persistent save
+            print_info "iptables 规则已保存（使用 netfilter-persistent）"
+        elif command -v iptables-save &> /dev/null; then
+            iptables-save > /etc/iptables/rules.v4 2>/dev/null || iptables-save > /etc/iptables.rules 2>/dev/null || true
+            if command -v ip6tables-save &> /dev/null; then
+                ip6tables-save > /etc/iptables/rules.v6 2>/dev/null || ip6tables-save > /etc/ip6tables.rules 2>/dev/null || true
+            fi
+            print_info "iptables 规则已保存"
+        fi
+    else
+        print_info "端口跳跃已禁用，跳过 iptables 转发配置"
     fi
     
     # 启用开机自启
@@ -269,7 +328,11 @@ EOF
     PUBLIC_IP=$(get_public_ip)
     
     # 生成连接链接
-    HYSTERIA_LINK="hysteria2://${PASSWORD}@${PUBLIC_IP}:${PORT}?sni=${DOMAIN}&insecure=0&allowInsecure=0&mport=20000-30000#HY2"
+    if [ "$USE_PORT_HOPPING" = true ]; then
+        HYSTERIA_LINK="hysteria2://${PASSWORD}@${PUBLIC_IP}:${PORT}?sni=${DOMAIN}&insecure=0&allowInsecure=0&mport=${PORT_RANGE}#HY2"
+    else
+        HYSTERIA_LINK="hysteria2://${PASSWORD}@${PUBLIC_IP}:${PORT}?sni=${DOMAIN}&insecure=0&allowInsecure=0#HY2"
+    fi
     
     # 输出结果
     echo ""
@@ -283,6 +346,11 @@ EOF
     echo "  密码: $PASSWORD"
     echo "  公网IP: $PUBLIC_IP"
     echo "  端口: $PORT"
+    if [ "$USE_PORT_HOPPING" = true ]; then
+        echo "  端口跳跃范围: $PORT_RANGE"
+    else
+        echo "  端口跳跃: 已禁用"
+    fi
     echo ""
     print_info "Hysteria2 连接信息:"
     echo ""
@@ -296,7 +364,11 @@ EOF
     echo ""
     
     print_warning "客户端配置提示:"
-    echo "  - 跳跃端口号范围: 20000-30000"
+    if [ "$USE_PORT_HOPPING" = true ]; then
+        echo "  - 端口跳跃已启用，范围: $PORT_RANGE"
+    else
+        echo "  - 端口跳跃已禁用"
+    fi
     echo "  - SNI: $DOMAIN"
     echo ""
     
@@ -315,8 +387,10 @@ EOF
     
     print_warning "重要提示:"
     echo "  - 请确保服务器安全组/防火墙已开放端口: $PORT (TCP/UDP)"
-    echo "  - 客户端使用跳跃端口范围 20000-30000，已通过 iptables 转发到端口 $PORT"
-    echo "  - 证书将在 60 天后自动续期（通过 acme.sh 的 cron 任务）"
+    if [ "$USE_PORT_HOPPING" = true ]; then
+        echo "  - 客户端使用跳跃端口范围 $PORT_RANGE，已通过 iptables 转发到端口 $PORT"
+    fi
+    echo "  - 证书有效期 90 天，acme.sh 会每天自动检查，剩余 60 天时自动续期"
     echo "  - 如需修改配置，请编辑 /etc/hysteria/config.yaml 后重启服务"
     echo ""
 }
