@@ -118,17 +118,6 @@ main() {
         print_info "已禁用端口跳跃"
     fi
     
-    print_info "域名: $DOMAIN"
-    print_info "邮箱: $EMAIL"
-    echo ""
-    
-    # 安装依赖
-    install_dependencies
-    
-    # 生成随机密码
-    PASSWORD=$(generate_password)
-    print_info "生成随机密码: $PASSWORD"
-    
     # 端口输入或随机生成
     echo ""
     read -p "请输入监听端口 (留空使用随机端口 30000-40000): " USER_PORT
@@ -144,6 +133,24 @@ main() {
         PORT=$USER_PORT
         print_info "使用指定端口: $PORT"
     fi
+    
+    echo ""
+    print_info "域名: $DOMAIN"
+    print_info "邮箱: $EMAIL"
+    print_info "端口: $PORT"
+    if [ "$USE_PORT_HOPPING" = true ]; then
+        print_info "端口跳跃: 已启用 ($PORT_RANGE)"
+    else
+        print_info "端口跳跃: 已禁用"
+    fi
+    echo ""
+    
+    # 安装依赖
+    install_dependencies
+    
+    # 生成随机密码
+    PASSWORD=$(generate_password)
+    print_info "生成随机密码: $PASSWORD"
     
     # 安装 Hysteria2
     print_info "开始安装 Hysteria2..."
