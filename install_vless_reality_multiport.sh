@@ -518,19 +518,29 @@ EOF
     done
 }
 
-configure_firewall() {
-    step "配置防火墙"
+configure_web_firewall() {
+    step "配置 Web 防火墙"
     if command -v ufw >/dev/null 2>&1; then
         ufw allow 80/tcp comment 'ACME HTTP challenge'
         ufw allow 443/tcp comment 'Nginx HTTPS'
+        info "已写入 UFW 规则（不会自动启用原本 inactive 的 UFW）"
+        ufw status verbose
+    else
+        warn "未安装 UFW；请在云厂商防火墙中开放 TCP 80 和 443"
+    fi
+}
+
+configure_xray_firewall() {
+    step "配置 Xray 防火墙"
+    if command -v ufw >/dev/null 2>&1; then
         local port
         for port in "${PORTS[@]}"; do
             ufw allow "${port}/tcp" comment 'Xray VLESS REALITY'
         done
-        info "已写入 UFW 规则（不会自动启用原本 inactive 的 UFW）"
+        info "已写入 10 个 Xray TCP 端口的 UFW 规则"
         ufw status verbose
     else
-        warn "未安装 UFW；请同时在云厂商防火墙中开放 TCP 80、443 和这 10 个端口：${PORTS[*]}"
+        warn "未安装 UFW；请在云厂商防火墙中开放这 10 个 TCP 端口：${PORTS[*]}"
     fi
 }
 
@@ -652,11 +662,12 @@ main() {
     confirm_install
     install_xray
     generate_credentials
-    configure_firewall
+    configure_web_firewall
     issue_certificate
     write_final_nginx_config
     show_web_listeners
     write_xray_configs
+    configure_xray_firewall
     start_instances
     write_client_files
     verify_installation
