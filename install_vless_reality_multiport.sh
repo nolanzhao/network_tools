@@ -266,8 +266,17 @@ generate_credentials() {
     step "生成独立凭据"
     local key_output
     key_output="$(xray x25519 2>&1)"
-    PRIVATE_KEY="$(awk -F': *' '/^Private[Kk]ey:/ {print $2; exit}' <<<"$key_output")"
-    PUBLIC_KEY="$(awk -F': *' '/^(Password|Public[Kk]ey):/ {print $2; exit}' <<<"$key_output")"
+    # Xray has used several labels over time:
+    #   Private key / Public key
+    #   PrivateKey / Password
+    #   PrivateKey / Password (PublicKey)
+    # Match the label prefix so a cosmetic label change does not break installation.
+    PRIVATE_KEY="$(awk -F':[[:space:]]*' '
+        tolower($1) ~ /^private[[:space:]]*key/ {print $2; exit}
+    ' <<<"$key_output")"
+    PUBLIC_KEY="$(awk -F':[[:space:]]*' '
+        tolower($1) ~ /^(password|public[[:space:]]*key)/ {print $2; exit}
+    ' <<<"$key_output")"
 
     [[ ${#PRIVATE_KEY} -eq 43 ]] || die "无法从 xray x25519 输出中提取私钥"
     [[ ${#PUBLIC_KEY} -eq 43 ]] || die "无法从 xray x25519 输出中提取客户端公钥/Password"
