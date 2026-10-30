@@ -623,10 +623,10 @@ main() {
     confirm_install
     install_xray
     generate_credentials
+    configure_firewall
     issue_certificate
     write_final_nginx_config
     write_xray_configs
-    configure_firewall
     start_instances
     write_client_files
     verify_installation
