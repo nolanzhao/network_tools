@@ -327,15 +327,32 @@ issue_certificate() {
     prepare_webroot
     write_http_nginx_config
 
+    local challenge_probe challenge_url challenge_response
+    challenge_probe="xray-acme-probe-$(openssl rand -hex 8)"
+    challenge_url="http://${DOMAIN}/.well-known/acme-challenge/${challenge_probe}"
+    printf '%s\n' "$challenge_probe" > "${WEB_ROOT}/.well-known/acme-challenge/${challenge_probe}"
+    chmod 0644 "${WEB_ROOT}/.well-known/acme-challenge/${challenge_probe}"
+    challenge_response="$(curl --noproxy '*' -fsS \
+        --resolve "${DOMAIN}:80:127.0.0.1" "$challenge_url")"
+    rm -f "${WEB_ROOT}/.well-known/acme-challenge/${challenge_probe}"
+    [[ $challenge_response == "$challenge_probe" ]] || \
+        die "Nginx ACME challenge 路径自检失败：${challenge_url}"
+    info "Nginx ACME challenge 路径自检通过"
+
     if [[ ! -x "${ACME_HOME}/acme.sh" ]]; then
         curl -fsSL https://get.acme.sh | sh -s email="$EMAIL"
     fi
 
     "${ACME_HOME}/acme.sh" --set-default-ca --server letsencrypt
-    "${ACME_HOME}/acme.sh" --issue \
-        --domain "$DOMAIN" \
-        --webroot "$WEB_ROOT" \
-        --server letsencrypt
+    # The script's default umask is 077 for protecting generated credentials.
+    # ACME HTTP-01 files must be readable by the unprivileged Nginx worker.
+    (
+        umask 022
+        "${ACME_HOME}/acme.sh" --issue \
+            --domain "$DOMAIN" \
+            --webroot "$WEB_ROOT" \
+            --server letsencrypt
+    )
 
     install -d -m 0700 "$FALLBACK_DIR"
     "${ACME_HOME}/acme.sh" --install-cert \
