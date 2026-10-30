@@ -287,7 +287,13 @@ generate_credentials() {
 }
 
 prepare_webroot() {
-    install -d -m 0755 "$WEB_ROOT" "${WEB_ROOT}/.well-known/acme-challenge"
+    # List every level explicitly: with the script-wide umask 077, an implicit
+    # intermediate .well-known directory would otherwise be created as 0700,
+    # preventing the unprivileged Nginx worker from traversing it.
+    install -d -m 0755 \
+        "$WEB_ROOT" \
+        "${WEB_ROOT}/.well-known" \
+        "${WEB_ROOT}/.well-known/acme-challenge"
     cat > "${WEB_ROOT}/index.html" <<EOF
 <!doctype html>
 <html lang="zh-CN">
