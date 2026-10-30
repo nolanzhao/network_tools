@@ -294,13 +294,210 @@ prepare_webroot() {
         "$WEB_ROOT" \
         "${WEB_ROOT}/.well-known" \
         "${WEB_ROOT}/.well-known/acme-challenge"
-    cat > "${WEB_ROOT}/index.html" <<EOF
+    cat > "${WEB_ROOT}/index.html" <<'REALITY_FALLBACK_HTML'
 <!doctype html>
 <html lang="zh-CN">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${DOMAIN}</title></head>
-<body><h1>It works.</h1></body>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>__REALITY_DOMAIN__</title>
+<link rel="icon" href="data:,">
+<style>html,body{margin:0;height:100%;overflow:hidden;background:#4aa8e8}canvas{display:block;image-rendering:pixelated}</style>
+</head>
+<body>
+<canvas id="c" role="img" aria-label="像素风海岛动画：飞机、游艇、海豚、鲸鱼、飞鸟和沙滩"></canvas>
+<script>
+const{sin,cos,abs,min,max,round,floor,PI,random}=Math
+const C={k:'#1b2a41',w:'#fff',g:'#c9d6df',b:'#5b7ea6',r:'#e8504a',o:'#f5a623',y:'#ffd75e',n:'#7a4a2a',N:'#4f2f1c',l:'#3fa34d',L:'#2a7a3b',s:'#f3d9a0',c:'#6fd0e8',d:'#39567a',D:'#2a3f5f',e:'#a9bfd1',f:'#6f92b5',F:'#4f6f91',a:'#46505c'}
+const mk=(w,h)=>{const c=document.createElement('canvas');c.width=w;c.height=h;return c}
+const S=t=>{const r=t.split('|'),c=mk(max(...r.map(l=>l.length)),r.length),x=c.getContext('2d');r.forEach((l,j)=>[...l].forEach((p,i)=>{if(C[p]){x.fillStyle=C[p];x.fillRect(i,j,1,1)}}));return c}
+
+const PLANE=S('....................rr|...................rrr|..................rrrr|.......cc........rrrrr|....wwwccwwwwwwwwwwwrr|..wwwwwwwwwwwwwwwwwwww|..rrrrrrrrrrrrrrrrrrrr|..gwwwwwwwwwwwwwwwwgg|....gggrrrrrrgggg|.......rrrrrr|........rrr')
+const YACHT=S('...........k|..........rk|........kkkkkk|.......wwcccccww|.....gwwwwwwwwwwww|...gwcwwcwwcwwcwwwww|.ggwwwwwwwwwwwwwwwwwwww|bbbwwwwwwwwwwwwwwwwwwwww|.bbbbbbbbbbbbbbbbbbbbbb|..rrrrrrrrrrrrrrrrrrrr')
+const SAIL=S('...r|...w|..ww|.www|wwww|...n|bbbbbb')
+const DOLPHIN=S('........F|.......FF|....ffffffffff|F.fffffffffffkff|FFffffeeeeeeee|F...ff.eeeee')
+const WHALE=S('...........ddddddddddd|......ddddddddddddddddddddd|...dddkdddddddddddddddddddddd|.ddddddddddddddddddddddddddddddd.D|eeeeeeeeeeeedddddddddddddddddddddD|.eeeeeeeeeeeeeedddddddddddddddd|...eeeeeeeeeee')
+const TAIL=S('dd.......dd|ddd.....ddd|.ddddddddd|...ddddd|....ddd|....ddd|....ddd|....ddd')
+const CLOUDS=[S('......wwwwww|...wwwwwwwwwww.www|.wwwwwwwwwwwwwwwwwww|wwwwwwwwwwwwwwwwwwwwww|ggwwwgggwwwwggggwwwggg'),S('....wwww|.wwwwwwwwww|wwwwwwwwwwwww|gggwwggggwggg')]
+const BIRD=['a...a|.a.a|..a','|aa.aa|..a'].map(S),GULL=['w...w|.w.w|..w','|ww.ww|..w'].map(S)
+const CROWN=S('.....lll...lll|...llLLLl.lLLLll|.lllL..lLlLl..Lll|ll.....LlnlL....ll|l....lllLnLll....l|....ll..L.L..ll|...l....L.L....l')
+const HUT=S('......nnnnnn|....nnNNNNNNnn|..nnNNNNNNNNNNnn|nnNNNNNNNNNNNNNNnn|..sssssssssssss|..ssNNNsssskkkss|..ssNNNsssskkkss|..ssNNNsssssssss')
+const UMBRELLA=S('.....rrwwrr|...rrrwwwrrr|.rrrrwwwwwrrrr|.......n|.......n|.......n|.......n|.......n')
+const CRAB=S('r.....r|rr.r.rr|.rrrrr|r.r.r.r')
+const BALL=S('.rr|rwwy|ywwr|.yy')
+
+const hex=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16)),DAY=['#4aa8e8','#c5ecf7']
+// 昼夜关键帧：位置、天顶色、地平线色、场景色罩 rgb+a
+const KEYS=[[0,...DAY,0,0,0,0],[.5,...DAY,0,0,0,0],[.6,'#4b4a9c','#ff9d6e',120,50,60,.28],[.68,'#141a4d','#4a4a8a',20,25,80,.5],[.85,'#0b1033','#27386e',15,20,70,.58],[.94,'#5570c8','#ffc7a0',90,70,110,.25],[1,...DAY,0,0,0,0]].map(k=>[k[0],hex(k[1]),hex(k[2]),k.slice(3)])
+const mix=(a,b,u)=>a.map((v,i)=>v+(b[i]-v)*u),rgb=a=>`rgb(${a.map(round)})`
+
+const cv=document.getElementById('c'),x=cv.getContext('2d'),scene=mk(1,1),g=scene.getContext('2d')
+let W,H,hy,cx,iy,rx,ry,far,isle,stars,glints
+const d=(s,px,py,f)=>{px=round(px);py=round(py);if(f){g.save();g.translate(px+s.width,py);g.scale(-1,1);g.drawImage(s,0,0);g.restore()}else g.drawImage(s,px,py)}
+const p=(col,px,py,w=1,h=1)=>{g.fillStyle=col;g.fillRect(round(px),round(py),w,h)}
+const disc=(o,px,py,r,col)=>{o.fillStyle=col;for(let j=-r;j<=r;j++){const w=round((r*r-j*j)**.5);o.fillRect(round(px)-w,round(py)+j,w*2+1,1)}}
+const R=a=>1+.16*sin(2*a+.6)+.13*sin(3*a+2.4)+.07*sin(5*a+1.1)+.035*sin(8*a+4)
+const inB=(dx,dy,A,B,ph=0,k=1)=>(dx/A)**2+(dy/B)**2<(1+(R(Math.atan2(dy/B,dx/A)+ph)-1)*k)**2
+const blob=(o,ex,ey,A,B,col,ph,k)=>{o.fillStyle=col;const m=1.4;for(let j=-B*m|0;j<=B*m;j++)for(let i=-A*m|0;i<=A*m;i++)if(inB(i,j,A,B,ph,k))o.fillRect(ex+i,ey+j,1,1)}
+
+function layout(){
+  const s=max(1,floor(min(innerWidth/180,innerHeight/150)))
+  W=Math.ceil(innerWidth/s);H=Math.ceil(innerHeight/s)
+  cv.width=scene.width=W;cv.height=scene.height=H;g.imageSmoothingEnabled=false
+  cv.style.width=W*s+'px';cv.style.height=H*s+'px'
+  hy=round(H*.46);iy=round(hy+(H-hy)*.38);cx=round(W*.5);rx=round(min(W*.36,78));ry=16
+  stars=Array.from({length:W*hy/110|0},()=>[random()*W,random()*hy,random()*7])
+  glints=Array.from({length:W*(H-hy)/170|0},()=>[random()*W,hy+2+random()**1.4*(H-hy),random()*7])
+  // 远山 + 海面：静态层
+  far=mk(W,H);let o=far.getContext('2d')
+  o.fillStyle='#8fb9d0'
+  for(let i=0;i<W;i++){const h=max(0,6*sin(i*.03+1)+4*sin(i*.083)+2*sin(i*.21)+1);o.fillRect(i,hy-round(h),1,round(h))}
+  const SEA=['#4cc4dc','#39aed2','#2a97c8','#2083bc','#1a6fab','#155d9a']
+  SEA.forEach((col,i)=>{
+    const y0=hy+round((H-hy)*i/SEA.length),y1=hy+round((H-hy)*(i+1)/SEA.length)
+    o.fillStyle=col;o.fillRect(0,y0,W,y1-y0)
+    if(i)for(let k=0;k<W;k+=2){o.fillStyle=SEA[i-1];o.fillRect(k,y0,1,1)}
+  })
+  // 岛：静态层
+  isle=mk(W,H);o=isle.getContext('2d')
+  blob(o,cx,iy,rx+8,ry+5,'#5fd3d6');blob(o,cx,iy,rx+4,ry+2,'#8be3d8')
+  blob(o,cx,iy,rx,ry,'#d9b67a');blob(o,cx,iy-1,rx-1,ry-2,C.s)
+  blob(o,cx-2,iy-6,round(rx*.62),9,C.L,2,.5);blob(o,cx-2,iy-8,round(rx*.6),8,C.l,2,.5)
+  blob(o,cx+round(rx*.12),iy-11,round(rx*.36),9,C.l,4,.5);blob(o,cx+round(rx*.12),iy-13,round(rx*.26),5,'#57b85f',4,.5)
+  for(let i=0;i<90;i++){
+    const a=random()*2*PI,u=random()**.5
+    const px=round(cx+cos(a)*u*rx*.92*R(a)),py=round(iy+sin(a)*u*ry*.86*R(a)),grass=inB(px-cx+2,py-iy+8,rx*.58,8,2,.5)
+    o.fillStyle=grass?C.L:'#e3c48a';o.fillRect(px,py,1,1)
+  }
+}
+
+function palm(bx,by,h,lean,t){
+  for(let i=0;i<h;i++)p(i%3?C.n:C.N,bx+lean*(i/h)**2*6,by-i,2,1)
+  const tx=bx+lean*6,ty=by-h
+  p(C.N,tx-1,ty+1,2,2);p(C.N,tx+2,ty+1,2,2)
+  d(CROWN,tx-8+round(sin(t*1.4+bx)),ty-3)
+}
+
+function frame(t){
+  const c=(t/120+.12)%1
+  let i=0;while(KEYS[i+1][0]<c)i++
+  const A=KEYS[i],B=KEYS[i+1],u=(c-A[0])/(B[0]-A[0]),top=mix(A[1],B[1],u),bot=mix(A[2],B[2],u),tint=mix(A[3],B[3],u),night=max(0,(tint[3]-.3)/.28)
+  // 天空：分带 + 抖动
+  const n=12,bh=(hy+1)/n
+  for(let j=0;j<n;j++){
+    const y0=round(j*bh),y1=round((j+1)*bh)
+    x.fillStyle=rgb(mix(top,bot,j/(n-1)));x.fillRect(0,y0,W,y1-y0)
+    if(j<n-1){x.fillStyle=rgb(mix(top,bot,(j+1)/(n-1)));for(let k=j%2;k<W;k+=2)x.fillRect(k,y1-1,1,1)}
+  }
+  if(night>0)for(const[a,b,ph]of stars){x.globalAlpha=night*(.5+.5*sin(t*2+ph));x.fillStyle=C.w;x.fillRect(a|0,b|0,1,1)}
+  x.globalAlpha=1
+  const su=((c>.9?c-1:c)+.1)/.72,mu=(c-.64)/.28
+  let reflect=-1,refCol
+  if(su>=0&&su<=1){
+    const sx=W*(.12+.76*su),sy=hy+6-sin(su*PI)*(hy-14),low=sin(su*PI)<.28
+    x.globalAlpha=.35;disc(x,sx,sy,10,low?'#ff9d5c':'#fff7c9');x.globalAlpha=1
+    disc(x,sx,sy,7,low?'#ffb35c':'#ffe97a')
+    reflect=sx;refCol=low?'#ffb35c':'#fff3b0'
+  }else if(mu>=0&&mu<=1){
+    const mx=W*(.12+.76*mu),my=hy+6-sin(mu*PI)*(hy-14)
+    disc(x,mx,my,6,'#eef2ff');x.fillStyle='#c6cfe6';x.fillRect(round(mx)-2,round(my)-2,2,2);x.fillRect(round(mx)+2,round(my)+1,2,1);x.fillRect(round(mx)-1,round(my)+3,1,1)
+    reflect=mx;refCol='#c6cfe6'
+  }
+
+  g.clearRect(0,0,W,H)
+  // 云
+  ;[[0,.12,1.3],[1,.34,.8],[0,.56,.6],[1,.2,1.8],[1,.72,.45]].forEach(([k,yf,sp],j)=>d(CLOUDS[k],(j*83+t*sp)%(W+40)-30,hy*yf))
+  d(far,0,0)
+  // 海面
+  for(const[a,b,ph]of glints){
+    const v=sin(t*1.6+ph*3),depth=(b-hy)/(H-hy)
+    if(v>.15)p(depth<.25?'#a8ecf2':'#7fd4ea',a+sin(t*.5+ph)*4,b,1+round(depth*5),1)
+  }
+  if(reflect>=0&&reflect<W)for(let j=hy+1;j<H;j+=2)if(sin(j*1.7+t*3)>-.3)p(refCol,reflect-2-3*sin(j+t*2),j,3+round((j-hy)/(H-hy)*9),1)
+  d(SAIL,(W*.8-t*1.1)%(W+20)+(t*1.1>W*.8?W+20:0)-10,hy-4+round(sin(t)*.6))
+  // 鲸鱼：出水、喷气、摆尾
+  {
+    const T=14,m=floor(t/T),q=t/T%1,wl=hy+14,wx=m*97.3%1*(W-50)+6-q*14
+    g.save();g.beginPath();g.rect(0,0,W,wl);g.clip()
+    if(q<.42)d(WHALE,wx,wl-sin(q/.42*PI)*6)
+    if(q>.5&&q<.78)d(TAIL,wx+20,wl-sin((q-.5)/.28*PI)*9)
+    g.restore()
+    if(q<.42)for(let k=0;k<17;k+=2)if(sin(k+t*5)>-.4)p(C.w,wx+7+k*1.5,wl,2,1)
+    if(q>.5&&q<.78)for(let k=0;k<5;k++)if(sin(k*2+t*6)>-.3)p(C.w,wx+20+k*3,wl,2,1)
+    if(q>.1&&q<.3)for(let k=0;k<10;k++){
+      const a=(t*1.4+k/10)%1,sp=k%2*2-1
+      p(a>.6?'#cfeefa':C.w,wx+11+sp*a*a*(k%5+2),wl-6-a*15+a*a*5)
+    }
+  }
+  d(isle,0,0)
+  // 岸边浪花
+  for(let a=0;a<2*PI;a+=.014){
+    const b=1.5+sin(t*1.2)*.8
+    if(sin(a*34+t*2)>-.25)p(C.w,cx+cos(a)*(rx*R(a)+b+.5),iy+sin(a)*(ry*R(a)+b*.6))
+  }
+  // 岛上物件
+  palm(cx-round(rx*.34),iy-8,28,-1,t)
+  palm(cx-round(rx*.08),iy-13,24,1,t+2)
+  const hx=cx+round(rx*.14),hty=iy-15
+  d(HUT,hx,hty)
+  for(let k=0;k<4;k++){const a=(t*.35+k/4)%1;p(C.g,hx+13+sin(a*7+k)*2,hty-2-a*14)}
+  palm(cx-round(rx*.62),iy-1,24,-1.4,t+1)
+  palm(cx+round(rx*.66),iy,25,1.4,t+3)
+  d(UMBRELLA,cx+round(rx*.2),iy-2)
+  p(C.y,cx+round(rx*.34),iy+4,9,3);p(C.w,cx+round(rx*.34),iy+5,9,1)
+  d(CRAB,cx-round(rx*.4)+sin(t*.45)*9,iy+7)
+  const ball=abs(sin(t*2.6))*7,bx=cx-round(rx*.12)
+  p('#d9b67a',bx,iy+9,4,1);d(BALL,bx,iy+5-ball)
+  // 飞鸟
+  const fx=(t*12)%(W+90)-50,fy=hy*.42+sin(t*.3)*6
+  for(let k=0;k<5;k++)d(BIRD[floor(t*4+k*.7)%2],fx+k*8,fy+abs(k-2)*4)
+  for(let k=0;k<3;k++){const a=t*.5+k*2.1;d(GULL[floor(t*3+k)%2],cx+cos(a)*rx*.65,iy-46+sin(a)*7+k*3,cos(a)>0)}
+  // 飞机
+  const px=W+20-(t*16)%(W+60),py=hy*.2+sin(t*.8)*2
+  d(PLANE,px,py)
+  p(t*40%2<1?C.k:C.g,px+1,py+3,1,6)
+  // 游艇
+  const L=W+80,y=(t*9)%(2*L),dir=y<L?1:-1,yx=(dir>0?y:2*L-y)-40,base=iy+ry+(H-iy-ry)*.5
+  const yb=round(base+sin(t*1.5))
+  d(YACHT,yx,yb-10,dir<0)
+  for(let k=0;k<16;k++)if(sin(k*1.3+t*7)>-.2)p(C.w,yx+(dir>0?-k*2:24+k*2),yb+k%3-1,2,1)
+  p(C.w,yx+(dir>0?24:-2),yb-2+round(sin(t*5)),2,1)
+  // 海豚
+  {
+    const wl=H-10,sp=14,T=4
+    for(let k=0;k<3;k++){
+      const q=(t/T+k*.27)%1,hx=(t*sp)%(W+90)-45+k*17,b=.5
+      if(q<b){
+        const v=q/b,h=9
+        const ang=-Math.atan2(cos(v*PI)*h*PI,sp*T*b)
+        g.save();g.beginPath();g.rect(0,0,W,wl);g.clip()
+        g.translate(round(hx),round(wl-sin(v*PI)*h));g.rotate(ang);g.drawImage(DOLPHIN,-8,-3);g.restore()
+      }
+      for(const[s0,sx]of[[0,hx-3],[b,hx+3]]){
+        const a=(q-s0+1)%1/.12
+        if(a<1)for(let m=-2;m<=2;m++)p(C.w,sx+m*(1+a*3),wl-abs(m%2?5:3)*sin(a*PI))
+      }
+    }
+  }
+  // 夜色罩只盖场景，不压星空
+  if(tint[3]>0){g.globalCompositeOperation='source-atop';g.fillStyle=`rgba(${tint.slice(0,3).map(round)},${tint[3]})`;g.fillRect(0,0,W,H);g.globalCompositeOperation='source-over'}
+  x.drawImage(scene,0,0)
+  if(night>0){x.globalAlpha=min(1,night*1.5);x.fillStyle=C.y;x.fillRect(hx+11,hty+5,3,2);x.globalAlpha=1}
+}
+
+layout()
+if(matchMedia('(prefers-reduced-motion: reduce)').matches){
+  frame(10);addEventListener('resize',()=>{layout();frame(10)})
+}else{
+  let last=-99
+  const loop=now=>{requestAnimationFrame(loop);if(now-last<50)return;last=now;frame(now/1000+10)}
+  requestAnimationFrame(loop);addEventListener('resize',()=>{layout();last=-99})
+}
+</script>
+</body>
 </html>
-EOF
+REALITY_FALLBACK_HTML
+    sed -i "s/__REALITY_DOMAIN__/${DOMAIN}/g" "${WEB_ROOT}/index.html"
     chmod 0644 "${WEB_ROOT}/index.html"
 }
 
