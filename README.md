@@ -13,6 +13,27 @@ ubuntu 24.04 lts, root
 ./install_vless_reality.sh
 ```
 
+#### 1.1 vless + reality 多端口版
+
+使用自有域名作为 SNI，自动配置 Nginx TLS 回落站点并监听 10 个独立 TCP 端口。
+
+```bash
+./install_vless_reality_multiport.sh \
+  --domain proxy.example.com \
+  --email admin@example.com
+```
+
+安装时可选择回落网页风格：直接回车使用默认的 `pixel`，输入 `2` 使用 `island`。
+也可以在命令中直接指定：
+
+```bash
+# 默认明亮像素海岛
+./install_vless_reality_multiport.sh --domain proxy.example.com --email admin@example.com --page-style pixel
+
+# 静谧像素海岛
+./install_vless_reality_multiport.sh --domain proxy.example.com --email admin@example.com --page-style island
+```
+
 #### 2. tuic
 速度快, QUIC 协议, UDP
 

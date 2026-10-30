@@ -36,6 +36,7 @@ NC='\033[0m'
 DOMAIN=""
 EMAIL=""
 PORTS_RAW=""
+PAGE_STYLE=""
 SERVER_IP=""
 UUID=""
 PRIVATE_KEY=""
@@ -60,12 +61,14 @@ usage() {
   --email EMAIL      ACME 证书通知邮箱
   --ports LIST       恰好 10 个 TCP 端口，逗号或空格分隔
                      留空时从 ${PORT_MIN}-${PORT_MAX} 自动选择 10 个未占用端口
+  --page-style NAME  回落页风格：pixel（默认）或 island
   --skip-dns-check   跳过域名 A 记录与本机公网 IPv4 的一致性检查
   -y, --yes          不显示安装前确认提示
   -h, --help         显示帮助
 
 示例：
   ${SCRIPT_NAME} --domain lab.example.com --email admin@example.com
+  ${SCRIPT_NAME} --domain lab.example.com --email admin@example.com --page-style island
   ${SCRIPT_NAME} --domain lab.example.com --email admin@example.com \\
     --ports '20317,21487,21863,23962,24491,25376,26731,27683,28654,29841'
 EOF
@@ -87,6 +90,11 @@ parse_args() {
             --ports)
                 [[ $# -ge 2 ]] || die "--ports 缺少参数"
                 PORTS_RAW="$2"
+                shift 2
+                ;;
+            --page-style)
+                [[ $# -ge 2 ]] || die "--page-style 缺少参数"
+                PAGE_STYLE="${2,,}"
                 shift 2
                 ;;
             --skip-dns-check)
@@ -141,6 +149,28 @@ collect_input() {
         die "域名格式无效：${DOMAIN}"
     [[ ${EMAIL} =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]] || \
         die "邮箱格式无效：${EMAIL}"
+
+    if [[ -z ${PAGE_STYLE} ]]; then
+        if [[ ${ASSUME_YES} == true ]]; then
+            PAGE_STYLE="pixel"
+        else
+            printf '\n请选择回落网页风格：\n'
+            printf '  1) pixel  - 明亮像素海岛（默认）\n'
+            printf '  2) island - 静谧像素海岛\n'
+            local page_choice
+            read -r -p "请选择 [1/2，直接回车选 1]: " page_choice || true
+            case "${page_choice:-1}" in
+                1|pixel) PAGE_STYLE="pixel" ;;
+                2|island) PAGE_STYLE="island" ;;
+                *) die "无效的网页风格选项：${page_choice}" ;;
+            esac
+        fi
+    fi
+
+    case "$PAGE_STYLE" in
+        pixel|island) ;;
+        *) die "网页风格必须是 pixel 或 island：${PAGE_STYLE}" ;;
+    esac
 }
 
 install_dependencies() {
@@ -243,6 +273,7 @@ confirm_install() {
     printf '  域名 / SNI : %s\n' "$DOMAIN"
     printf '  公网 IPv4  : %s\n' "$SERVER_IP"
     printf '  TCP 端口   : %s\n' "${PORTS[*]}"
+    printf '  网页风格   : %s\n' "$PAGE_STYLE"
     printf '  回落目标   : 127.0.0.1:8443 (Nginx TLS)\n'
     printf '  公网网站   : https://%s/\n\n' "$DOMAIN"
 
@@ -294,7 +325,517 @@ prepare_webroot() {
         "$WEB_ROOT" \
         "${WEB_ROOT}/.well-known" \
         "${WEB_ROOT}/.well-known/acme-challenge"
-    cat > "${WEB_ROOT}/index.html" <<'REALITY_FALLBACK_HTML'
+    if [[ ${PAGE_STYLE} == "island" ]]; then
+        cat > "${WEB_ROOT}/index.html" <<'REALITY_ISLAND_HTML'
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#071521" />
+    <meta name="color-scheme" content="dark" />
+    <title>__REALITY_DOMAIN__</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <style>
+      * { box-sizing: border-box; }
+
+      html, body {
+        width: 100%;
+        min-height: 100%;
+        margin: 0;
+      }
+
+      body {
+        min-height: 100svh;
+        overflow: hidden;
+        background: #55b8c2;
+      }
+
+      .island-frame {
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100svh;
+        overflow: hidden;
+        background: #55b8c2;
+      }
+
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+        cursor: default;
+        image-rendering: pixelated;
+        image-rendering: crisp-edges;
+        outline: none;
+      }
+
+      canvas:focus-visible {
+        box-shadow: inset 0 0 0 3px rgba(206, 245, 229, 0.65);
+      }
+
+    </style>
+  </head>
+  <body>
+    <main class="island-frame">
+      <canvas
+        id="island"
+        width="720"
+        height="480"
+        role="img"
+        aria-label="海面中央的一座像素小岛"
+      ></canvas>
+    </main>
+
+    <script>
+      const canvas = document.querySelector('#island');
+      const ctx = canvas.getContext('2d', { alpha: false });
+      let W = canvas.width;
+      let H = canvas.height;
+      const TAU = Math.PI * 2;
+      const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+
+      let seed = 1;
+      let scene;
+      let previousTime = 0;
+
+      function random() {
+        seed |= 0;
+        seed = (seed + 0x6D2B79F5) | 0;
+        let value = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+        value = (value + Math.imul(value ^ (value >>> 7), 61 | value)) ^ value;
+        return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+      }
+
+      function between(min, max) { return min + random() * (max - min); }
+      function choose(items) { return items[Math.floor(random() * items.length)]; }
+
+      function makeRing(cx, cy, rx, ry, points, roughness) {
+        const ring = [];
+        for (let i = 0; i < points; i++) {
+          const angle = (i / points) * TAU;
+          const wobble = 1 + Math.sin(angle * 3 + scene.phase) * 0.045 + between(-roughness, roughness);
+          ring.push({
+            x: Math.round(cx + Math.cos(angle) * rx * wobble),
+            y: Math.round(cy + Math.sin(angle) * ry * wobble)
+          });
+        }
+        return ring;
+      }
+
+      function pointInEllipse(x, y, cx, cy, rx, ry) {
+        const dx = (x - cx) / rx;
+        const dy = (y - cy) / ry;
+        return dx * dx + dy * dy < 1;
+      }
+
+      function makeScene() {
+        seed = 0x4e4f4c41;
+        const islandScale = Math.max(0.62, Math.min(1, Math.min(W, H) / 600));
+        scene = {
+          phase: between(0, TAU),
+          cx: W / 2 + between(-18, 18) * islandScale,
+          cy: H / 2 + between(-10, 10) * islandScale,
+          rx: between(192, 222) * islandScale,
+          ry: between(101, 119) * islandScale,
+          hue: choose(['lush', 'mint', 'warm']),
+          sand: [], grass: [], rocks: [], palms: [], flowers: [], clouds: [], birds: []
+        };
+
+        scene.outer = makeRing(scene.cx, scene.cy, scene.rx, scene.ry, 54, 0.055);
+        scene.inner = makeRing(scene.cx - 2, scene.cy - 7, scene.rx * 0.81, scene.ry * 0.7, 48, 0.05);
+
+        for (let i = 0; i < 105; i++) {
+          const x = between(scene.cx - scene.rx, scene.cx + scene.rx);
+          const y = between(scene.cy - scene.ry, scene.cy + scene.ry);
+          if (Math.abs(x - scene.cx) < scene.rx * 0.7 &&
+              y > scene.cy + scene.ry * 0.12 &&
+              pointInEllipse(x, y, scene.cx, scene.cy, scene.rx * 0.94, scene.ry * 0.88) &&
+              !pointInEllipse(x, y, scene.cx, scene.cy + scene.ry * 0.04, scene.rx * 0.72, scene.ry * 0.5)) {
+            scene.sand.push({ x, y, shade: random() });
+          }
+        }
+
+        for (let i = 0; i < 125; i++) {
+          const x = between(scene.cx - scene.rx * 0.72, scene.cx + scene.rx * 0.72);
+          const y = between(scene.cy - scene.ry * 0.55, scene.cy + scene.ry * 0.4);
+          if (pointInEllipse(x, y, scene.cx - 2, scene.cy - 7, scene.rx * 0.75, scene.ry * 0.58)) {
+            scene.grass.push({ x, y, shade: random(), size: random() > 0.82 ? 3 : 2 });
+          }
+        }
+
+        const palmCount = 4 + Math.floor(random() * 4);
+        for (let i = 0; i < palmCount; i++) {
+          scene.palms.push({
+            x: between(scene.cx - scene.rx * 0.55, scene.cx + scene.rx * 0.55),
+            y: between(scene.cy - scene.ry * 0.34, scene.cy + scene.ry * 0.12),
+            height: between(42, 58),
+            lean: between(-5, 5),
+            phase: between(0, TAU)
+          });
+        }
+
+        for (let i = 0; i < 9; i++) {
+          scene.rocks.push({
+            x: between(scene.cx - scene.rx * 0.88, scene.cx + scene.rx * 0.88),
+            y: between(scene.cy - scene.ry * 0.42, scene.cy + scene.ry * 0.48),
+            size: between(3, 7)
+          });
+        }
+
+        for (let i = 0; i < 16; i++) {
+          scene.flowers.push({
+            x: between(scene.cx - scene.rx * 0.64, scene.cx + scene.rx * 0.64),
+            y: between(scene.cy - scene.ry * 0.42, scene.cy + scene.ry * 0.15),
+            color: choose(['#fff2a8', '#ffd0b7', '#d9d2ff', '#f7f4dc'])
+          });
+        }
+
+        for (let i = 0; i < 4; i++) {
+          scene.clouds.push({ x: between(-100, W), y: between(H * 0.1, H * 0.32), speed: between(2, 5), scale: between(0.65, 1.25) });
+        }
+
+        for (let i = 0; i < 3; i++) {
+          scene.birds.push({ x: between(0, W), y: between(H * 0.14, H * 0.36), speed: between(5, 10), phase: between(0, TAU) });
+        }
+
+        draw(0);
+      }
+
+      function polygon(points, fill) {
+        ctx.beginPath();
+        ctx.moveTo(points[0].x, points[0].y);
+        for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+        ctx.closePath();
+        ctx.fillStyle = fill;
+        ctx.fill();
+      }
+
+      function drawBeach() {
+        const points = [];
+        const steps = 24;
+        for (let i = 0; i <= steps; i++) {
+          const angle = Math.PI * (0.24 + (0.52 * i) / steps);
+          points.push({
+            x: scene.cx + Math.cos(angle) * scene.rx * 0.96,
+            y: scene.cy + Math.sin(angle) * scene.ry * 0.94
+          });
+        }
+        for (let i = steps; i >= 0; i--) {
+          const angle = Math.PI * (0.24 + (0.52 * i) / steps);
+          points.push({
+            x: scene.cx + Math.cos(angle) * scene.rx * 0.72,
+            y: scene.cy + Math.sin(angle) * scene.ry * 0.5 + scene.ry * 0.04
+          });
+        }
+        polygon(points, '#f3ead7');
+      }
+
+      function drawOcean(time) {
+        const horizon = H * 0.36;
+        const sky = ctx.createLinearGradient(0, 0, 0, horizon);
+        sky.addColorStop(0, '#d8eee4');
+        sky.addColorStop(1, '#94d4d1');
+        ctx.fillStyle = sky;
+        ctx.fillRect(0, 0, W, horizon + 1);
+
+        const ocean = ctx.createLinearGradient(0, horizon, W, H);
+        ocean.addColorStop(0, '#82d1c9');
+        ocean.addColorStop(0.42, '#54bbc2');
+        ocean.addColorStop(1, '#2d91ad');
+        ctx.fillStyle = ocean;
+        ctx.fillRect(0, horizon, W, H - horizon);
+
+        const shallows = ctx.createRadialGradient(
+          scene.cx, scene.cy, scene.rx * 0.55,
+          scene.cx, scene.cy, scene.rx * 2.7
+        );
+        shallows.addColorStop(0, 'rgba(188, 239, 207, 0.4)');
+        shallows.addColorStop(0.42, 'rgba(104, 207, 191, 0.2)');
+        shallows.addColorStop(1, 'rgba(36, 127, 167, 0)');
+        ctx.fillStyle = shallows;
+        ctx.fillRect(0, horizon, W, H - horizon);
+
+        const deepWater = ctx.createRadialGradient(W * 0.14, H * 0.82, 8, W * 0.14, H * 0.82, Math.max(W, H) * 0.54);
+        deepWater.addColorStop(0, 'rgba(22, 103, 151, 0.22)');
+        deepWater.addColorStop(1, 'rgba(22, 103, 151, 0)');
+        ctx.fillStyle = deepWater;
+        ctx.fillRect(0, horizon, W, H - horizon);
+
+        const sunlitWater = ctx.createRadialGradient(W * 0.85, H * 0.1, 10, W * 0.85, H * 0.1, Math.max(W, H) * 0.5);
+        sunlitWater.addColorStop(0, 'rgba(202, 244, 221, 0.2)');
+        sunlitWater.addColorStop(1, 'rgba(202, 244, 221, 0)');
+        ctx.fillStyle = sunlitWater;
+        ctx.fillRect(0, horizon, W, H - horizon);
+      }
+
+      function drawCloud(cloud, time) {
+        const x = ((cloud.x + time * 0.001 * cloud.speed + 120) % (W + 240)) - 120;
+        const y = cloud.y;
+        const s = cloud.scale;
+        ctx.fillStyle = 'rgba(167, 220, 219, 0.12)';
+        ctx.fillRect(Math.round(x - 6 * s), Math.round(y + 8 * s), Math.round(70 * s), Math.round(9 * s));
+        ctx.fillStyle = 'rgba(216, 242, 234, 0.24)';
+        ctx.fillRect(Math.round(x), Math.round(y), Math.round(54 * s), Math.round(12 * s));
+        ctx.fillRect(Math.round(x + 12 * s), Math.round(y - 7 * s), Math.round(24 * s), Math.round(9 * s));
+      }
+
+      function drawPalm(palm, time) {
+        const sway = reduceMotion.matches ? 0 : Math.round(Math.sin(time * 0.0015 + palm.phase) * 1.5);
+        const topX = Math.round(palm.x + palm.lean + sway);
+        const topY = Math.round(palm.y - palm.height);
+
+        ctx.fillStyle = '#5d4430';
+        for (let i = 0; i < palm.height; i += 4) {
+          const t = i / palm.height;
+          const x = Math.round(palm.x + (palm.lean + sway) * t);
+          ctx.fillRect(x - 2, Math.round(palm.y - i), 5, 5);
+          ctx.fillStyle = i % 8 ? '#76563a' : '#8b6742';
+        }
+
+        ctx.fillStyle = '#153f32';
+        ctx.fillRect(topX - 18, topY + 1, 38, 4);
+        ctx.fillRect(topX - 13, topY - 6, 29, 4);
+        ctx.fillRect(topX - 4, topY - 12, 8, 22);
+        ctx.fillStyle = '#247052';
+        ctx.fillRect(topX - 16, topY - 2, 14, 4);
+        ctx.fillRect(topX + 3, topY - 5, 16, 4);
+        ctx.fillRect(topX - 2, topY - 11, 5, 12);
+        ctx.fillStyle = '#3a9061';
+        ctx.fillRect(topX - 11, topY - 7, 10, 3);
+        ctx.fillRect(topX + 5, topY - 9, 9, 3);
+        ctx.fillStyle = '#70412d';
+        ctx.fillRect(topX - 3, topY - 1, 3, 3);
+        ctx.fillRect(topX + 2, topY, 3, 3);
+      }
+
+      function drawHut() {
+        const x = Math.round(scene.cx + scene.rx * 0.18);
+        const y = Math.round(scene.cy - scene.ry * 0.05);
+        ctx.fillStyle = '#513b2b';
+        ctx.fillRect(x - 17, y - 16, 34, 24);
+        ctx.fillStyle = '#b8804b';
+        ctx.fillRect(x - 14, y - 13, 28, 21);
+        ctx.fillStyle = '#2d2830';
+        ctx.fillRect(x - 5, y - 3, 9, 11);
+        ctx.fillStyle = '#e5bd62';
+        ctx.fillRect(x + 7, y - 8, 5, 5);
+        ctx.fillStyle = '#785034';
+        ctx.beginPath();
+        ctx.moveTo(x - 23, y - 15);
+        ctx.lineTo(x, y - 31);
+        ctx.lineTo(x + 23, y - 15);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = '#aa7541';
+        ctx.fillRect(x - 17, y - 19, 35, 4);
+      }
+
+      function drawCrab(time) {
+        const x = Math.round(scene.cx - scene.rx * 0.62);
+        const y = Math.round(scene.cy + scene.ry * 0.31);
+        const step = reduceMotion.matches ? 0 : Math.round(Math.sin(time * 0.004));
+        ctx.fillStyle = '#a94232';
+        ctx.fillRect(x - 6, y - 3, 13, 7);
+        ctx.fillStyle = '#d86143';
+        ctx.fillRect(x - 4, y - 5, 9, 7);
+        ctx.fillRect(x - 10, y - 4 + step, 4, 3);
+        ctx.fillRect(x + 7, y - 4 - step, 4, 3);
+        ctx.fillRect(x - 9, y + 4 - step, 4, 2);
+        ctx.fillRect(x + 6, y + 4 + step, 4, 2);
+        ctx.fillStyle = '#f6ead1';
+        ctx.fillRect(x - 3, y - 5, 2, 2);
+        ctx.fillRect(x + 3, y - 5, 2, 2);
+        ctx.fillStyle = '#2b2630';
+        ctx.fillRect(x - 2, y - 5, 1, 1);
+        ctx.fillRect(x + 4, y - 5, 1, 1);
+      }
+
+      function drawWhale(time) {
+        const drift = reduceMotion.matches ? 0 : Math.sin(time * 0.00045) * 18;
+        const bob = reduceMotion.matches ? 0 : Math.round(Math.sin(time * 0.0012) * 2);
+        const x = Math.round(W * 0.2 + drift);
+        const y = Math.round(H * 0.63 + bob);
+        ctx.fillStyle = 'rgba(20, 78, 125, 0.28)';
+        ctx.fillRect(x - 22, y + 9, 56, 4);
+        ctx.fillStyle = '#285c86';
+        ctx.fillRect(x - 18, y - 7, 38, 15);
+        ctx.fillRect(x - 11, y - 11, 27, 5);
+        ctx.fillRect(x + 17, y - 4, 11, 9);
+        ctx.fillStyle = '#39759e';
+        ctx.fillRect(x - 11, y - 9, 25, 4);
+        ctx.fillStyle = '#a8d7e2';
+        ctx.fillRect(x - 14, y + 5, 28, 3);
+        ctx.fillStyle = '#153b5d';
+        ctx.fillRect(x + 10, y - 6, 2, 2);
+        ctx.fillRect(x - 25, y - 9, 9, 5);
+        ctx.fillRect(x - 27, y - 14, 5, 7);
+        ctx.fillRect(x - 26, y - 2, 5, 7);
+
+        if (!reduceMotion.matches && Math.sin(time * 0.0011) > 0.72) {
+          ctx.fillStyle = 'rgba(220, 247, 255, 0.82)';
+          ctx.fillRect(x + 18, y - 17, 2, 7);
+          ctx.fillRect(x + 14, y - 20, 4, 2);
+          ctx.fillRect(x + 21, y - 22, 4, 2);
+          ctx.fillRect(x + 11, y - 24, 3, 2);
+          ctx.fillRect(x + 25, y - 26, 3, 2);
+        }
+      }
+
+      function drawDolphin(x, y, flip, phase, time) {
+        const leap = reduceMotion.matches ? 0 : Math.sin(time * 0.0015 + phase) * 9;
+        ctx.save();
+        ctx.translate(Math.round(x), Math.round(y + leap));
+        ctx.scale(flip, 1);
+        ctx.fillStyle = '#3f789b';
+        ctx.fillRect(-11, -3, 19, 7);
+        ctx.fillRect(-6, -6, 11, 4);
+        ctx.fillRect(7, -1, 7, 4);
+        ctx.fillRect(-15, -6, 5, 4);
+        ctx.fillRect(-15, 3, 5, 4);
+        ctx.fillRect(-1, -9, 5, 4);
+        ctx.fillStyle = '#b5dae2';
+        ctx.fillRect(0, 3, 8, 2);
+        ctx.fillStyle = '#173f5a';
+        ctx.fillRect(5, -3, 2, 2);
+        ctx.restore();
+      }
+
+      function drawYacht(time) {
+        const x = Math.round(88 + ((time * 0.014) % (W + 120)));
+        const y = Math.round(H * 0.78 + Math.sin(time * 0.0016) * 3);
+        ctx.fillStyle = 'rgba(214, 244, 255, 0.55)';
+        ctx.fillRect(x - 32, y + 8, 27, 3);
+        ctx.fillRect(x - 23, y + 13, 18, 2);
+        ctx.fillStyle = '#173d5b';
+        ctx.fillRect(x - 18, y + 6, 49, 5);
+        ctx.fillStyle = '#f8f4e8';
+        ctx.beginPath();
+        ctx.moveTo(x - 23, y);
+        ctx.lineTo(x + 34, y);
+        ctx.lineTo(x + 26, y + 8);
+        ctx.lineTo(x - 16, y + 8);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = '#df7751';
+        ctx.fillRect(x - 11, y + 4, 33, 2);
+        ctx.fillStyle = '#f4efe2';
+        ctx.fillRect(x - 7, y - 11, 29, 11);
+        ctx.fillRect(x + 17, y - 7, 11, 7);
+        ctx.fillStyle = '#3a7da5';
+        ctx.fillRect(x - 3, y - 8, 7, 5);
+        ctx.fillRect(x + 7, y - 8, 7, 5);
+        ctx.fillRect(x + 20, y - 5, 6, 3);
+        ctx.fillStyle = '#ece7d9';
+        ctx.fillRect(x + 4, y - 21, 2, 10);
+        ctx.fillRect(x + 4, y - 21, 9, 2);
+      }
+
+      function drawPlane(time) {
+        const x = Math.round(((time * 0.018 + 40) % (W + 150)) - 75);
+        const y = Math.round(H * 0.16 + Math.sin(time * 0.0007) * 8);
+        ctx.fillStyle = 'rgba(21, 72, 111, 0.14)';
+        ctx.fillRect(x - 26, y + 11, 56, 3);
+        ctx.fillStyle = '#f5f1e7';
+        ctx.fillRect(x - 24, y - 3, 48, 8);
+        ctx.fillRect(x - 5, y - 12, 13, 27);
+        ctx.fillRect(x - 21, y - 9, 8, 7);
+        ctx.fillStyle = '#d95f4b';
+        ctx.fillRect(x - 24, y - 3, 8, 8);
+        ctx.fillRect(x - 1, y - 10, 5, 22);
+        ctx.fillStyle = '#2f6f9a';
+        ctx.fillRect(x + 12, y - 1, 5, 3);
+        ctx.fillRect(x + 19, y - 1, 4, 3);
+      }
+
+      function drawBird(bird, time) {
+        const x = ((bird.x + time * 0.001 * bird.speed) % (W + 40)) - 20;
+        const y = bird.y + Math.sin(time * 0.001 + bird.phase) * 5;
+        const flap = Math.sin(time * 0.008 + bird.phase) > 0;
+        ctx.fillStyle = 'rgba(221, 239, 229, 0.65)';
+        ctx.fillRect(Math.round(x), Math.round(y), 2, 2);
+        ctx.fillRect(Math.round(x - 3), Math.round(y + (flap ? -2 : 1)), 3, 2);
+        ctx.fillRect(Math.round(x + 2), Math.round(y + (flap ? -2 : 1)), 3, 2);
+      }
+
+      function draw(time) {
+        drawOcean(time);
+        scene.clouds.forEach((cloud) => drawCloud(cloud, time));
+        drawPlane(time);
+        drawWhale(time);
+        drawDolphin(W * 0.78, H * 0.43, 1, 0, time);
+        drawDolphin(W * 0.84, H * 0.5, -1, 1.8, time);
+
+        ctx.save();
+        ctx.translate(0, 6);
+        ctx.globalAlpha = 0.2;
+        polygon(scene.outer.map((p) => ({ x: p.x + 6, y: p.y + 12 })), '#001c25');
+        ctx.restore();
+
+        polygon(scene.outer, scene.hue === 'warm' ? '#4d854d' : scene.hue === 'mint' ? '#559963' : '#43844f');
+        drawBeach();
+        polygon(scene.inner, scene.hue === 'warm' ? '#559054' : scene.hue === 'mint' ? '#5da46b' : '#4b9156');
+
+        scene.sand.forEach((dot) => {
+          ctx.fillStyle = dot.shade > 0.55 ? '#fffaf0' : '#d9cdb7';
+          ctx.fillRect(Math.round(dot.x), Math.round(dot.y), dot.shade > 0.84 ? 3 : 2, 2);
+        });
+
+        scene.grass.forEach((dot) => {
+          ctx.fillStyle = dot.shade > 0.65 ? '#79b967' : dot.shade < 0.18 ? '#2e7046' : '#4e9d58';
+          ctx.fillRect(Math.round(dot.x), Math.round(dot.y), dot.size, dot.size);
+        });
+
+        scene.rocks.forEach((rock) => {
+          ctx.fillStyle = '#58665d';
+          ctx.fillRect(Math.round(rock.x), Math.round(rock.y), Math.round(rock.size), Math.round(rock.size * 0.7));
+          ctx.fillStyle = '#899084';
+          ctx.fillRect(Math.round(rock.x + 1), Math.round(rock.y), Math.max(2, Math.round(rock.size / 2)), 2);
+        });
+
+        scene.flowers.forEach((flower) => {
+          ctx.fillStyle = flower.color;
+          ctx.fillRect(Math.round(flower.x), Math.round(flower.y), 2, 2);
+        });
+
+        const palms = [...scene.palms].sort((a, b) => a.y - b.y);
+        palms.forEach((palm) => drawPalm(palm, time));
+        drawHut();
+        drawCrab(time);
+
+        drawYacht(time);
+        scene.birds.forEach((bird) => drawBird(bird, time));
+      }
+
+      function animate(time) {
+        if (!document.hidden && (!reduceMotion.matches || !previousTime)) draw(time);
+        previousTime = time;
+        requestAnimationFrame(animate);
+      }
+
+      function resizeCanvas() {
+        const pixelScale = innerWidth < 700 ? 1 : 1.5;
+        W = Math.max(320, Math.round(innerWidth / pixelScale));
+        H = Math.max(320, Math.round(innerHeight / pixelScale));
+        canvas.width = W;
+        canvas.height = H;
+        makeScene();
+      }
+
+      let resizeTimer;
+      addEventListener('resize', () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(resizeCanvas, 120);
+      });
+
+      resizeCanvas();
+      requestAnimationFrame(animate);
+    </script>
+  </body>
+</html>
+REALITY_ISLAND_HTML
+    else
+        cat > "${WEB_ROOT}/index.html" <<'REALITY_FALLBACK_HTML'
 <!doctype html>
 <html lang="zh-CN">
 <head>
@@ -497,6 +1038,7 @@ if(matchMedia('(prefers-reduced-motion: reduce)').matches){
 </body>
 </html>
 REALITY_FALLBACK_HTML
+    fi
     sed -i "s/__REALITY_DOMAIN__/${DOMAIN}/g" "${WEB_ROOT}/index.html"
     chmod 0644 "${WEB_ROOT}/index.html"
 }
@@ -814,6 +1356,7 @@ EOF
     cat > "${STATE_DIR}/installed.env" <<EOF
 DOMAIN=${DOMAIN}
 PORTS=${PORTS[*]}
+PAGE_STYLE=${PAGE_STYLE}
 INSTALLED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 EOF
     chmod 0600 "${STATE_DIR}/installed.env"
@@ -837,6 +1380,7 @@ show_result() {
     printf '\n%b安装完成%b\n' "$GREEN" "$NC"
     printf '域名 / SNI: %s\n' "$DOMAIN"
     printf '10 个 TCP 端口: %s\n' "${PORTS[*]}"
+    printf '回落网页风格: %s\n' "$PAGE_STYLE"
     printf '客户端配置: %s/sing-box-outbound.json\n' "$OUTPUT_DIR"
     printf '分享链接: %s/share-links.txt\n' "$OUTPUT_DIR"
     printf '二维码: %s/qr-<端口>.png\n' "$OUTPUT_DIR"
