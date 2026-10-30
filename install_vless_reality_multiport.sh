@@ -497,17 +497,23 @@ EOF
 
 configure_firewall() {
     step "配置防火墙"
-    if command -v ufw >/dev/null 2>&1 && ufw status | grep -q '^Status: active'; then
+    if command -v ufw >/dev/null 2>&1; then
         ufw allow 80/tcp comment 'ACME HTTP challenge'
         ufw allow 443/tcp comment 'Nginx HTTPS'
         local port
         for port in "${PORTS[@]}"; do
             ufw allow "${port}/tcp" comment 'Xray VLESS REALITY'
         done
-        info "已添加 UFW 规则"
+        info "已写入 UFW 规则（不会自动启用原本 inactive 的 UFW）"
+        ufw status verbose
     else
-        warn "UFW 未启用；请同时在云厂商防火墙中开放 TCP 80、443 和这 10 个端口：${PORTS[*]}"
+        warn "未安装 UFW；请同时在云厂商防火墙中开放 TCP 80、443 和这 10 个端口：${PORTS[*]}"
     fi
+}
+
+show_web_listeners() {
+    step "检查 Web 监听端口"
+    ss -lntp | grep -E ':(80|443)\b' || die "未检测到 TCP 80/443 监听端口"
 }
 
 start_instances() {
@@ -626,6 +632,7 @@ main() {
     configure_firewall
     issue_certificate
     write_final_nginx_config
+    show_web_listeners
     write_xray_configs
     start_instances
     write_client_files
